@@ -78,7 +78,7 @@ def decode_token(token: str, settings: Settings) -> AuthenticatedUser:
 
     try:
         if unverified.get("iss") == DEV_ISSUER:
-            if not settings.dev_login_allowed:
+            if not settings.local_session_allowed:
                 raise AuthError("Invalid token")
             claims = _decode_dev(token, settings)
         else:
@@ -93,8 +93,8 @@ def decode_token(token: str, settings: Settings) -> AuthenticatedUser:
 
 
 def mint_dev_token(user_id: str, email: str, settings: Settings) -> str:
-    """Create a development session token. Only callable when dev login is allowed."""
-    if not settings.dev_login_allowed:
+    """Create a LexLens-issued session token. Only callable when local sessions are allowed."""
+    if not settings.local_session_allowed:
         raise RuntimeError("Development login is disabled")
     now = datetime.now(timezone.utc)
     payload = {

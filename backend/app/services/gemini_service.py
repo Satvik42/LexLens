@@ -85,6 +85,8 @@ class GeminiService(StructuredModel):
                 last_unavailable = exc
                 if exc.code == 429:
                     self._cooldown.mark(model, RATE_LIMIT_COOLDOWN_SECONDS)
+                elif exc.code == 404:
+                    self._cooldown.mark(model, 3600.0)
                 elif exc.code == 503:
                     self._cooldown.mark(model, OUTAGE_COOLDOWN_SECONDS)
                 logger.warning("Gemini model unavailable (%s); trying the next model", model)
@@ -121,7 +123,7 @@ class GeminiService(StructuredModel):
             except Exception as exc:  # network / quota / safety - surfaced as a generic unavailability
                 retryable = getattr(exc, "code", None) in _TRANSIENT_CODES and attempt < attempts
                 if not retryable:
-                    logger.warning("Gemini request failed (%s): %s", model, exc.__class__.__name__)
+                    logger.warning("Gemini request failed (%s): %s %s", model, exc.__class__.__name__, str(exc)[:180])
                     raise ModelUnavailableError(
                         "The analysis service is temporarily unavailable",
                         code=getattr(exc, "code", None),

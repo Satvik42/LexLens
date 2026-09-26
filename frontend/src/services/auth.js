@@ -39,20 +39,23 @@ function decodeExpiry(token) {
 }
 
 export async function getAccessToken() {
+  const local = readDevSession();
+  if (local?.access_token) return local.access_token;
   if (supabase) {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? null;
   }
-  return readDevSession()?.access_token ?? null;
+  return null;
 }
 
 export async function getCurrentSession() {
+  const local = readDevSession();
+  if (local) return { email: local.email, provider: local.provider || 'demo' };
   if (supabase) {
     const { data } = await supabase.auth.getSession();
     return data.session ? { email: data.session.user.email, provider: 'supabase' } : null;
   }
-  const session = readDevSession();
-  return session ? { email: session.email, provider: 'dev' } : null;
+  return null;
 }
 
 export function onAuthChange(callback) {
@@ -67,6 +70,34 @@ export async function signInWithGoogle(redirectTo) {
   if (!supabase) throw new Error('Google sign-in requires Supabase configuration.');
   const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
   if (error) throw error;
+}
+
+function storeLocalSession(session, provider) {
+  window.sessionStorage.setItem(
+    DEV_SESSION_KEY,
+    JSON.stringify({
+      access_token: session.access_token,
+      email: session.email,
+      provider,
+      expires_at: decodeExpiry(session.access_token),
+    }),
+  );
+}
+
+export async function fetchAuthConfig() {
+  const response = await fetch(`${API_BASE}/api/auth/config`);
+  if (!response.ok) return { demo_login: false, dev_login: false };
+  return response.json();
+}
+
+export async function signInWithDemo() {
+  const response = await fetch(`${API_BASE}/api/auth/demo-session`, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error(response.status === 404 ? 'Demo sign-in is not enabled on the server.' : 'Sign-in failed. Please try again.');
+  }
+  const session = await response.json();
+  storeLocalSession(session, 'demo');
+  return { pending: false, email: session.email };
 }
 
 export async function signInWithEmail(email, redirectTo) {
@@ -84,17 +115,13 @@ export async function signInWithEmail(email, redirectTo) {
     throw new Error(response.status === 404 ? 'Development sign-in is not enabled on the server.' : 'Sign-in failed. Please try again.');
   }
   const session = await response.json();
-  window.sessionStorage.setItem(
-    DEV_SESSION_KEY,
-    JSON.stringify({ access_token: session.access_token, email: session.email, expires_at: decodeExpiry(session.access_token) }),
-  );
+  storeLocalSession(session, 'dev');
   return { pending: false, email: session.email };
 }
 
 export async function signOut() {
+  window.sessionStorage.removeItem(DEV_SESSION_KEY);
   if (supabase) {
     await supabase.auth.signOut();
-    return;
   }
-  window.sessionStorage.removeItem(DEV_SESSION_KEY);
 }

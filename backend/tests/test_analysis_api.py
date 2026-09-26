@@ -130,6 +130,27 @@ def test_lawyer_questions_are_grounded(client, alice, ready_document):
     assert len(questions[0]["evidence"]) == 2 and all(e["verified"] for e in questions[0]["evidence"])
 
 
+def test_notice_exit_is_built_from_the_document_when_gemini_is_down(client, alice, ready_document):
+    from app.api.deps import ServiceContainer
+    from app.services.gemini_service import ModelUnavailableError, StructuredModel
+
+    class Down(StructuredModel):
+        def generate(self, prompt, schema, *, conversational=False):
+            raise ModelUnavailableError("capacity", code=503)
+
+    services = client.app.state.services
+    client.app.state.services = ServiceContainer(storage=services.storage, processing=services.processing, model=Down())
+    response = client.post(f"/api/documents/{ready_document['id']}/analyze", headers=alice, json={"operation": "NOTICE_EXIT", "force": True})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["operation"] == "NOTICE_EXIT"
+    notice_values = {item["value"] for item in result["findings"] if item.get("value")}
+    assert any("60" in (value or "") for value in notice_values)
+    if result["inconsistencies"]:
+        values = {item["value"] for item in result["inconsistencies"][0]["values"]}
+        assert any("30" in value for value in values) and any("60" in value for value in values)
+
+
 def test_lawyer_questions_are_built_from_the_document_when_gemini_is_down(client, alice, ready_document):
     from app.api.deps import ServiceContainer
     from app.services.gemini_service import ModelUnavailableError, StructuredModel

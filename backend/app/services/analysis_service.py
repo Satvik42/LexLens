@@ -13,10 +13,11 @@ from app.db.models import Document, new_id
 from app.domain.operations import ANALYSIS_OPERATIONS, Operation, get_spec
 from app.prompts.analysis import build_analysis_prompt, repair_feedback
 from app.schemas.analysis import AnalysisResult, ConcernsOutput, FindingsOutput
+from app.services.analysis_fallback import build_fallback_analysis
 from app.services.context_service import build_operation_context
 from app.services.evidence_repository import persist_evidence
 from app.services.evidence_service import EvidenceValidator
-from app.services.gemini_service import StructuredModel
+from app.services.gemini_service import ModelOutputError, ModelUnavailableError, StructuredModel
 from app.services.result_assembly import assemble_analysis, iter_analysis_evidence
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def generate_with_repair(
 
 
 class AnalysisService:
-    def __init__(self, model: StructuredModel) -> None:
+    def __init__(self, model: StructuredModel | None) -> None:
         self._model = model
 
     def get_cached(self, db: Session, document: Document, operation: Operation) -> AnalysisResult | None:
@@ -81,15 +82,21 @@ class AnalysisService:
         schema = ConcernsOutput if operation == Operation.CONCERNS else FindingsOutput
         result_id = new_id()
 
-        result, validator = generate_with_repair(
-            self._model,
-            schema,
-            build_prompt=lambda feedback: build_analysis_prompt(spec, context.document_type, context.prompt_block, feedback),
-            make_validator=lambda: EvidenceValidator(context.pages),
-            convert=lambda output, v: assemble_analysis(
-                output, v, result_id=result_id, document_id=document.id, operation=operation.value, title=spec.label
-            ),
-        )
+        try:
+            if self._model is None:
+                raise ModelUnavailableError("Gemini is not configured")
+            result, _ = generate_with_repair(
+                self._model,
+                schema,
+                build_prompt=lambda feedback: build_analysis_prompt(spec, context.document_type, context.prompt_block, feedback),
+                make_validator=lambda: EvidenceValidator(context.pages),
+                convert=lambda output, v: assemble_analysis(
+                    output, v, result_id=result_id, document_id=document.id, operation=operation.value, title=spec.label
+                ),
+            )
+        except (ModelUnavailableError, ModelOutputError):
+            logger.warning("Gemini unavailable for %s; using document-grounded fallback", operation.value)
+            result = build_fallback_analysis(document, operation, result_id=result_id)
         assert isinstance(result, AnalysisResult)
         self._store(db, document, operation, result)
         return result

@@ -3,6 +3,7 @@
 import jwt
 
 from app.config import Settings
+from app.security.auth import decode_token, mint_dev_token
 from app.security.validation import sanitize_filename
 from tests.conftest import upload
 
@@ -37,6 +38,38 @@ def test_dev_login_is_refused_in_production_or_with_weak_secret():
     assert Settings(app_env="production", auth_dev_login_enabled=True, auth_dev_jwt_secret=strong).dev_login_allowed is False
     assert Settings(app_env="development", auth_dev_login_enabled=True, auth_dev_jwt_secret="short").dev_login_allowed is False
     assert Settings(app_env="development", auth_dev_login_enabled=True, auth_dev_jwt_secret=strong).dev_login_allowed is True
+
+
+def test_demo_login_is_allowed_in_production_when_explicitly_enabled():
+    strong = "s" * 40
+    production_demo = Settings(
+        app_env="production",
+        auth_demo_login_enabled=True,
+        auth_dev_jwt_secret=strong,
+    )
+    assert production_demo.demo_login_allowed is True
+    assert production_demo.dev_login_allowed is False
+    assert production_demo.local_session_allowed is True
+    assert Settings(app_env="production", auth_demo_login_enabled=False, auth_dev_jwt_secret=strong).demo_login_allowed is False
+    assert Settings(app_env="production", auth_demo_login_enabled=True, auth_dev_jwt_secret="short").demo_login_allowed is False
+    token = mint_dev_token("demo-user", "demo@lexlens.app", production_demo)
+    user = decode_token(token, production_demo)
+    assert user.id == "demo-user"
+    assert user.email == "demo@lexlens.app"
+
+
+def test_demo_session_mints_fixed_email_token(client):
+    config = client.get("/api/auth/config")
+    assert config.status_code == 200
+    assert config.json()["demo_login"] is True
+
+    response = client.post("/api/auth/demo-session")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == "demo@lexlens.app"
+    assert body["access_token"]
+    documents = client.get("/api/documents", headers={"Authorization": f"Bearer {body['access_token']}"})
+    assert documents.status_code == 200
 
 
 def test_unsupported_file_type_rejected(client, alice):

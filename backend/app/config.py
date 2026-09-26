@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     supabase_jwks_url: str | None = None
     auth_dev_login_enabled: bool = False
     auth_dev_jwt_secret: str | None = None
+    # Fixed-email demo session for live demos when Supabase email OTP is unavailable.
+    # Does not enable arbitrary-email /dev-session minting.
+    auth_demo_login_enabled: bool = False
+    auth_demo_login_email: str = "demo@lexlens.app"
 
     # Google Cloud
     gcp_project_id: str | None = None
@@ -40,10 +44,10 @@ class Settings(BaseSettings):
 
     # Gemini
     gemini_api_key: str | None = None
-    gemini_analysis_model: str = "gemini-3-flash"
-    gemini_chat_model: str = "gemini-3-flash"
+    gemini_analysis_model: str = "gemini-3-flash-preview"
+    gemini_chat_model: str = "gemini-3-flash-preview"
     # Tried in order after the primary model is unavailable. Comma-separated model ids.
-    gemini_fallback_models: str = "gemini-3.1-pro"
+    gemini_fallback_models: str = "gemini-3.5-flash,gemini-2.5-flash,gemini-flash-latest,gemini-3.1-pro-preview"
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -71,10 +75,23 @@ class Settings(BaseSettings):
         return self.max_upload_mb * 1024 * 1024
 
     @property
+    def _local_jwt_secret_ok(self) -> bool:
+        return bool(self.auth_dev_jwt_secret) and len(self.auth_dev_jwt_secret) >= MIN_JWT_SECRET_LENGTH
+
+    @property
     def dev_login_allowed(self) -> bool:
-        """Dev login is only ever permitted outside production and with a sufficiently long secret."""
-        secret_ok = bool(self.auth_dev_jwt_secret) and len(self.auth_dev_jwt_secret) >= MIN_JWT_SECRET_LENGTH
-        return self.auth_dev_login_enabled and not self.is_production and secret_ok
+        """Arbitrary-email /dev-session is only ever permitted outside production."""
+        return self.auth_dev_login_enabled and not self.is_production and self._local_jwt_secret_ok
+
+    @property
+    def demo_login_allowed(self) -> bool:
+        """One-click demo account. Allowed in production when explicitly enabled."""
+        return self.auth_demo_login_enabled and self._local_jwt_secret_ok
+
+    @property
+    def local_session_allowed(self) -> bool:
+        """True when the backend may mint or verify a LexLens-issued session token."""
+        return self.dev_login_allowed or self.demo_login_allowed
 
     @property
     def uses_gcs(self) -> bool:

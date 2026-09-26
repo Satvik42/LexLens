@@ -69,9 +69,11 @@ GCP_PROJECT="$(optional_env "$BACKEND_ENV" GCP_PROJECT_ID "$PROJECT")"
 GCS_BUCKET="$(optional_env "$BACKEND_ENV" GCS_BUCKET lexlens-docs)"
 DOCUMENT_AI_LOCATION="$(optional_env "$BACKEND_ENV" DOCUMENT_AI_LOCATION us)"
 DOCUMENT_AI_PROCESSOR_ID="$(optional_env "$BACKEND_ENV" DOCUMENT_AI_PROCESSOR_ID)"
-GEMINI_ANALYSIS_MODEL="$(optional_env "$BACKEND_ENV" GEMINI_ANALYSIS_MODEL gemini-3-flash)"
-GEMINI_CHAT_MODEL="$(optional_env "$BACKEND_ENV" GEMINI_CHAT_MODEL gemini-3-flash)"
-GEMINI_FALLBACK_MODELS="$(optional_env "$BACKEND_ENV" GEMINI_FALLBACK_MODELS gemini-3.1-pro)"
+AUTH_DEV_JWT_SECRET="$(env_value "$BACKEND_ENV" AUTH_DEV_JWT_SECRET)"
+AUTH_DEMO_LOGIN_ENABLED="$(optional_env "$BACKEND_ENV" AUTH_DEMO_LOGIN_ENABLED false)"
+GEMINI_ANALYSIS_MODEL="$(optional_env "$BACKEND_ENV" GEMINI_ANALYSIS_MODEL gemini-3-flash-preview)"
+GEMINI_CHAT_MODEL="$(optional_env "$BACKEND_ENV" GEMINI_CHAT_MODEL gemini-3-flash-preview)"
+GEMINI_FALLBACK_MODELS="$(optional_env "$BACKEND_ENV" GEMINI_FALLBACK_MODELS gemini-3.5-flash,gemini-2.5-flash,gemini-flash-latest,gemini-3.1-pro-preview)"
 
 if [[ -z "$GEMINI_API_KEY" ]]; then
   echo "GEMINI_API_KEY is empty in backend/.env" >&2
@@ -112,7 +114,16 @@ PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT" --format='value(projec
 RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 CLOUD_BUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
+if ! gcloud secrets describe AUTH_DEV_JWT_SECRET >/dev/null 2>&1; then
+  printf '%s' "$AUTH_DEV_JWT_SECRET" | gcloud secrets create AUTH_DEV_JWT_SECRET --data-file=-
+else
+  printf '%s' "$AUTH_DEV_JWT_SECRET" | gcloud secrets versions add AUTH_DEV_JWT_SECRET --data-file=-
+fi
+
 gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/secretmanager.secretAccessor" >/dev/null
+gcloud secrets add-iam-policy-binding AUTH_DEV_JWT_SECRET \
   --member="serviceAccount:${RUNTIME_SA}" \
   --role="roles/secretmanager.secretAccessor" >/dev/null
 
@@ -143,6 +154,7 @@ LOG_LEVEL: INFO
 DATABASE_URL: sqlite:////tmp/lexlens.db
 FRONTEND_DIST_DIR: /app/static
 AUTH_DEV_LOGIN_ENABLED: "false"
+AUTH_DEMO_LOGIN_ENABLED: "${AUTH_DEMO_LOGIN_ENABLED}"
 GCP_PROJECT_ID: ${GCP_PROJECT}
 GCS_BUCKET: ${GCS_BUCKET}
 DOCUMENT_AI_LOCATION: ${DOCUMENT_AI_LOCATION}
@@ -166,7 +178,7 @@ gcloud run deploy "$SERVICE" \
   --concurrency=10 \
   --cpu-boost \
   --no-cpu-throttling \
-  --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:latest" \
+  --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_DEV_JWT_SECRET=AUTH_DEV_JWT_SECRET:latest" \
   --env-vars-file="$ENV_FILE"
 rm -f "$ENV_FILE"
 

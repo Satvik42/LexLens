@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCard, Button, Card } from '../components/ui';
-import { AUTH_MODE, signInWithEmail, signInWithGoogle } from '../services/auth';
+import { AUTH_MODE, fetchAuthConfig, signInWithDemo, signInWithEmail, signInWithGoogle } from '../services/auth';
 import { useAuthStore } from '../state/authStore';
 
 export default function SignIn() {
@@ -14,6 +14,21 @@ export default function SignIn() {
   const [pending, setPending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState(null);
+  const [demoLogin, setDemoLogin] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthConfig()
+      .then((config) => {
+        if (!cancelled) setDemoLogin(Boolean(config.demo_login));
+      })
+      .catch(() => {
+        if (!cancelled) setDemoLogin(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (status === 'signed_in') return <Navigate to={next} replace />;
 
@@ -37,15 +52,14 @@ export default function SignIn() {
   }
 
   async function onDemo() {
-    setEmail('demo@lexlens.app');
     setError(null);
     setPending(true);
     try {
-      await signInWithEmail('demo@lexlens.app');
+      await signInWithDemo();
       await refresh();
       navigate(next, { replace: true });
     } catch (err) {
-      setError(err.message || 'Development sign-in is not enabled.');
+      setError(err.message || 'Demo sign-in is not enabled.');
     } finally {
       setPending(false);
     }
@@ -70,17 +84,24 @@ export default function SignIn() {
           </AlertCard>
         ) : (
           <form className="stack" style={{ marginTop: 24 }} onSubmit={onEmail}>
+            {demoLogin ? (
+              <Button variant="primary" onClick={onDemo} disabled={pending} loading={pending}>
+                Continue with a demo session
+              </Button>
+            ) : null}
             {AUTH_MODE === 'supabase' ? (
               <Button
                 variant="secondary"
                 onClick={() => signInWithGoogle(`${window.location.origin}${next}`)}
+                disabled={pending}
               >
                 Continue with Google
               </Button>
             ) : null}
-            <label className="field">
+            <label className="field" htmlFor="signin-email">
               <span className="field__label">Email</span>
               <input
+                id="signin-email"
                 className="input"
                 type="email"
                 required
@@ -90,10 +111,10 @@ export default function SignIn() {
                 placeholder="you@example.com"
               />
             </label>
-            <Button type="submit" loading={pending}>
+            <Button type="submit" variant={demoLogin ? 'secondary' : 'primary'} loading={pending && !demoLogin}>
               {AUTH_MODE === 'supabase' ? 'Email me a sign-in link' : 'Continue'}
             </Button>
-            {AUTH_MODE === 'dev' ? (
+            {AUTH_MODE === 'dev' && !demoLogin ? (
               <Button variant="ghost" onClick={onDemo} disabled={pending}>
                 Continue with a development session
               </Button>

@@ -11,6 +11,7 @@ os.environ.update(
         "DATABASE_URL": f"sqlite:///{_TMP}/test.db",
         "LOCAL_STORAGE_DIR": f"{_TMP}/storage",
         "AUTH_DEV_LOGIN_ENABLED": "true",
+        "AUTH_DEMO_LOGIN_ENABLED": "true",
         "AUTH_DEV_JWT_SECRET": "test-secret-not-for-production-0123456789abcdef",
         "GEMINI_API_KEY": "",
         "GCS_BUCKET": "",

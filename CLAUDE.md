@@ -130,7 +130,7 @@ System instruction (`backend/app/prompts/system.py`) states that document conten
 | Document AI               | Page/layout extraction (text, blocks, bounding boxes)                                                        | `services/document_ai_service.py` |
 | Gemini (google-genai SDK) | Document-type classification, structured analysis, grounded QA, suggested/professional questions, comparison | `services/gemini_service.py`      |
 
-Model IDs are configuration (`GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`). The running primary is `gemini-3-flash`. If that model is unavailable, `GEMINI_FALLBACK_MODELS` is tried in order, starting with `gemini-3.1-pro`. Live/audio models (`gemini-3.8-live`, `gemini-3.8-live-extended-thinking`) are **not** used: the plan's §43 excludes a voice-first assistant from MVP and a Live model only supports `bidiGenerateContent`, not schema-constrained `generateContent`.
+Model IDs are configuration (`GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`). The running primary is `gemini-3-flash-preview`. If that model is unavailable, `GEMINI_FALLBACK_MODELS` is tried in order: `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-flash-latest`, then `gemini-3.1-pro-preview`. Live/audio models (`gemini-3.8-live`, `gemini-3.8-live-extended-thinking`) are **not** used: the plan's §43 excludes a voice-first assistant from MVP and a Live model only supports `bidiGenerateContent`, not schema-constrained `generateContent`.
 
 `GeminiService` retries `503` on the current model (`TRANSIENT_ATTEMPTS` when it is the only model, two attempts when fallbacks are configured) and then moves to the next model. `429` is not retried on the same model; the request moves to the next fallback. Schema-validation retries (`_MAX_ATTEMPTS`) stay on the model that answered.
 
@@ -141,6 +141,7 @@ Local fallback: when Document AI is not configured, `services/local_parser_servi
 - Supabase Auth (Google OAuth + email magic link) on the frontend via `@supabase/supabase-js`.
 - Backend verifies the Supabase JWT (`SUPABASE_JWT_SECRET` HS256, or `SUPABASE_JWKS_URL` for asymmetric keys). User identity comes only from the verified token.
 - Development-only sign-in (`AUTH_DEV_LOGIN_ENABLED=true`, refused when `APP_ENV=production`) mints a local JWT through `POST /api/auth/dev-session` so the same verification path is exercised without Supabase.
+- Demo sign-in (`AUTH_DEMO_LOGIN_ENABLED=true`) mints a fixed-email session (`demo@lexlens.app`) via `POST /api/auth/demo-session`. Allowed in production so a live demo can continue when Supabase email OTP is rate-limited. Arbitrary-email `/dev-session` stays disabled in production.
 - Every document route resolves `document` by `(id, owner_user_id)`; missing or foreign documents return 404.
 
 ## 10. Storage & document lifecycle
@@ -167,6 +168,8 @@ Semantic HTML, keyboard-operable intent cards and evidence chips, visible focus 
 
 ```
 POST   /api/auth/dev-session                    (dev only)
+POST   /api/auth/demo-session                   (fixed demo account; production-safe when enabled)
+GET    /api/auth/config
 POST   /api/documents                           upload (multipart)
 GET    /api/documents                           list own documents
 GET    /api/documents/:id
@@ -220,7 +223,7 @@ npm test
 ## 17. Environment variables
 
 Backend (`backend/.env`): `APP_ENV`, `DATABASE_URL`, `CORS_ORIGINS`, `MAX_UPLOAD_MB`,
-`SUPABASE_JWT_SECRET` / `SUPABASE_JWKS_URL` / `SUPABASE_URL`, `AUTH_DEV_LOGIN_ENABLED`, `AUTH_DEV_JWT_SECRET`,
+`SUPABASE_JWT_SECRET` / `SUPABASE_JWKS_URL` / `SUPABASE_URL`, `AUTH_DEV_LOGIN_ENABLED`, `AUTH_DEV_JWT_SECRET`, `AUTH_DEMO_LOGIN_ENABLED`,
 `GCP_PROJECT_ID`, `GCS_BUCKET`, `LOCAL_STORAGE_DIR`, `DOCUMENT_AI_LOCATION`, `DOCUMENT_AI_PROCESSOR_ID`,
 `GEMINI_API_KEY`, `GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`, `RATE_LIMIT_PER_MINUTE`,
 `FRONTEND_DIST_DIR`.
@@ -276,7 +279,7 @@ _Last updated: after live GCP verification (2026-09-25)._
 
 ### Known issues / limitations
 
-- **Gemini 3.x Flash capacity is uneven.** The demo chain uses `gemini-3-flash` then `gemini-3.1-pro` so rate-limited 3.5/3.6/3.7/3.8 Flash ids are not tried first. A `429` skips that model for 60 seconds; a repeated `503` skips it for 20 seconds.
+- **Gemini model ids must match ListModels.** `gemini-3-flash` and `gemini-3.1-pro` 404; the working Flash id is `gemini-3-flash-preview`. Analysis and lawyer prep fall back to document-grounded extraction if every model fails.
 - Retrying `429` on the same model is deliberately not done: it means that model’s quota is already exhausted. The request moves to the next fallback instead. Only `503` is retried on the current model.
 - Analysis, QA, lawyer prep and comparison call Gemini. Without `GEMINI_API_KEY` the UI shows a friendly “not configured” error. Tests inject a fake model.
 - GCS and Document AI require Application Default Credentials (`gcloud auth application-default login`). If `GCS_BUCKET` is set without ADC, application startup fails rather than falling back to local storage.

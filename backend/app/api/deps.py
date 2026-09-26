@@ -31,7 +31,7 @@ class ServiceContainer:
 
     @property
     def analysis(self) -> AnalysisService:
-        return AnalysisService(self._require_model())
+        return AnalysisService(self.model)
 
     @property
     def questions(self) -> QuestionService:

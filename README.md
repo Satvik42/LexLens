@@ -63,7 +63,7 @@ The model must return one of:
 
 ### Model routing
 
-Analysis and chat call `generateContent` with a JSON schema. The primary model is configuration (`GEMINI_ANALYSIS_MODEL` / `GEMINI_CHAT_MODEL`). The demo primary is `gemini-3-flash`. If that model returns `503` or `429`, `GEMINI_FALLBACK_MODELS` is tried in order, starting with `gemini-3.1-pro`. A `429` is not retried on the same model. Live models are not used: they only support bidirectional streaming, which cannot return schema-constrained JSON.
+Analysis and chat call `generateContent` with a JSON schema. The primary model is configuration (`GEMINI_ANALYSIS_MODEL` / `GEMINI_CHAT_MODEL`). The demo primary is `gemini-3-flash-preview`. If that model returns `503` or `429`, `GEMINI_FALLBACK_MODELS` is tried in order (`gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-flash-latest`, then `gemini-3.1-pro-preview`). A `429` is not retried on the same model. Live models are not used: they only support bidirectional streaming, which cannot return schema-constrained JSON.
 
 ## How the solution works
 
@@ -171,7 +171,7 @@ When Cloud Storage or Document AI is not configured, the same normalised documen
 
 - No Google or Supabase service secrets in the frontend. Gemini, Storage, and Document AI are called only on the server.
 - Uploads are checked by extension, MIME type, and magic bytes, with a size limit. Text uploads reject NUL bytes. Filenames are sanitised. Storage keys are random.
-- The API verifies a Supabase JWT (`SUPABASE_JWT_SECRET` or `SUPABASE_JWKS_URL`). A development-only session exists and is refused when `APP_ENV=production`.
+- The API verifies a Supabase JWT (`SUPABASE_JWT_SECRET` or `SUPABASE_JWKS_URL`). Identity comes only from the verified token. Arbitrary-email `/dev-session` is refused when `APP_ENV=production`. An optional fixed-email demo session (`AUTH_DEMO_LOGIN_ENABLED`, default off) uses the same JWT verification path and never accepts a client-supplied user id.
 - Every document route resolves the row by `(id, owner_user_id)`. A missing or foreign document returns 404.
 - Upload, analysis, and question endpoints are rate limited. CORS is limited to configured origins.
 - Errors returned to the client are generic. Stack traces and document text are not logged.
@@ -268,6 +268,7 @@ Backend (`backend/.env`):
 | `CORS_ORIGINS` | Comma-separated allowed origins |
 | `SUPABASE_URL`, `SUPABASE_JWKS_URL` or `SUPABASE_JWT_SECRET` | Verify the caller |
 | `AUTH_DEV_LOGIN_ENABLED`, `AUTH_DEV_JWT_SECRET` | Development-only sign-in. Refused in production. |
+| `AUTH_DEMO_LOGIN_ENABLED` | One-click `demo@lexlens.app` session. Allowed in production when explicitly enabled. |
 | `GCP_PROJECT_ID`, `GCS_BUCKET` | Cloud Storage. Empty bucket uses local files. |
 | `DOCUMENT_AI_LOCATION`, `DOCUMENT_AI_PROCESSOR_ID` | Document OCR. Empty processor uses the local parser. |
 | `GEMINI_API_KEY` | Required for live analysis |
