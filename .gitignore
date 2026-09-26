@@ -1,0 +1,27 @@
+# Secrets — never commit real credentials. Only .env.example belongs in git.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Local runtime artifacts
+.local_storage/
+*.db
+*.sqlite3
+
+# Google service-account credentials
+*-service-account.json
+gcp-credentials*.json
+
+# OS / editor
+.DS_Store
