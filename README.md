@@ -63,7 +63,7 @@ The model must return one of:
 
 ### Model routing
 
-Analysis and chat call `generateContent` with a JSON schema. The primary model is configuration (`GEMINI_ANALYSIS_MODEL` / `GEMINI_CHAT_MODEL`). If that model returns `503` or `429`, `GEMINI_FALLBACK_MODELS` is tried in order: `gemini-3.6-flash`, then `gemini-3.5-flash`. A `429` is not retried on the same model. Live models are not used: they only support bidirectional streaming, which cannot return schema-constrained JSON.
+Analysis and chat call `generateContent` with a JSON schema. The primary model is configuration (`GEMINI_ANALYSIS_MODEL` / `GEMINI_CHAT_MODEL`). The demo primary is `gemini-3-flash`. If that model returns `503` or `429`, `GEMINI_FALLBACK_MODELS` is tried in order, starting with `gemini-3.1-pro`. A `429` is not retried on the same model. Live models are not used: they only support bidirectional streaming, which cannot return schema-constrained JSON.
 
 ## How the solution works
 
@@ -232,6 +232,25 @@ npm run dev
 
 Open `http://localhost:5173`. Leave `VITE_API_BASE_URL` empty in local development so the Vite proxy forwards `/api` to `http://localhost:8000`.
 
+## Deployment (single Cloud Run URL)
+
+The production image serves the Vite build and the FastAPI API from one origin. `VITE_API_BASE_URL` stays empty. Cloud Run keeps CPU allocated after the upload response so Document AI can finish in a FastAPI background task.
+
+```bash
+chmod +x scripts/deploy-cloud-run.sh
+./scripts/deploy-cloud-run.sh
+```
+
+The script reads `frontend/.env` (Supabase anon values) and `backend/.env` (Gemini, GCS, Document AI, JWKS), builds in Cloud Build, and deploys `lexlens` to Cloud Run in `us-central1`. It does not print secret values.
+
+After the first deploy:
+
+1. Copy the printed URL (currently `https://lexlens-263641821288.us-central1.run.app`).
+2. In Supabase → Authentication → URL configuration, set Site URL to that origin and add `https://lexlens-263641821288.us-central1.run.app/**` and `https://lexlens-hszr2ri6ua-uc.a.run.app/**` to Redirect URLs.
+3. Submit that origin as the live application link. Health check: `https://lexlens-263641821288.us-central1.run.app/api/health`.
+
+SQLite lives at `/tmp/lexlens.db` inside the revision. Uploaded files stay in Cloud Storage. A new revision starts with an empty database, so re-upload the demo PDF after a redeploy.
+
 Google Cloud Storage and Document AI use Application Default Credentials:
 
 ```bash
@@ -254,6 +273,7 @@ Backend (`backend/.env`):
 | `GEMINI_API_KEY` | Required for live analysis |
 | `GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL` | Primary model ids |
 | `GEMINI_FALLBACK_MODELS` | Comma-separated fallbacks, tried in order |
+| `FRONTEND_DIST_DIR` | Built Vite `dist` path. Empty for API-only local runs; `/app/static` in Cloud Run |
 
 Frontend (`frontend/.env`):
 

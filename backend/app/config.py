@@ -35,12 +35,15 @@ class Settings(BaseSettings):
     document_ai_location: str = "us"
     document_ai_processor_id: str | None = None
 
+    # Built Vite assets. Empty keeps the API-only local workflow.
+    frontend_dist_dir: str = ""
+
     # Gemini
     gemini_api_key: str | None = None
-    gemini_analysis_model: str = "gemini-3.8-flash"
-    gemini_chat_model: str = "gemini-3.8-flash"
+    gemini_analysis_model: str = "gemini-3-flash"
+    gemini_chat_model: str = "gemini-3-flash"
     # Tried in order after the primary model is unavailable. Comma-separated model ids.
-    gemini_fallback_models: str = "gemini-3.6-flash,gemini-3.5-flash"
+    gemini_fallback_models: str = "gemini-3.1-pro"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

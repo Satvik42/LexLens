@@ -39,7 +39,7 @@ class ServiceContainer:
 
     @property
     def lawyer(self) -> LawyerService:
-        return LawyerService(self._require_model())
+        return LawyerService(self.model)
 
     @property
     def comparison(self) -> ComparisonService:

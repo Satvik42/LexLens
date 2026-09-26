@@ -130,7 +130,7 @@ System instruction (`backend/app/prompts/system.py`) states that document conten
 | Document AI               | Page/layout extraction (text, blocks, bounding boxes)                                                        | `services/document_ai_service.py` |
 | Gemini (google-genai SDK) | Document-type classification, structured analysis, grounded QA, suggested/professional questions, comparison | `services/gemini_service.py`      |
 
-Model IDs are configuration (`GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`). The running primary is `gemini-3.7-flash`. If that model is unavailable, `GEMINI_FALLBACK_MODELS` is tried in order: `gemini-3.6-flash`, then `gemini-3.5-flash`. Live/audio models (`gemini-3.8-live`, `gemini-3.8-live-extended-thinking`) are **not** used: the plan's §43 excludes a voice-first assistant from MVP and a Live model only supports `bidiGenerateContent`, not schema-constrained `generateContent`.
+Model IDs are configuration (`GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`). The running primary is `gemini-3-flash`. If that model is unavailable, `GEMINI_FALLBACK_MODELS` is tried in order, starting with `gemini-3.1-pro`. Live/audio models (`gemini-3.8-live`, `gemini-3.8-live-extended-thinking`) are **not** used: the plan's §43 excludes a voice-first assistant from MVP and a Live model only supports `bidiGenerateContent`, not schema-constrained `generateContent`.
 
 `GeminiService` retries `503` on the current model (`TRANSIENT_ATTEMPTS` when it is the only model, two attempts when fallbacks are configured) and then moves to the next model. `429` is not retried on the same model; the request moves to the next fallback. Schema-validation retries (`_MAX_ATTEMPTS`) stay on the model that answered.
 
@@ -222,7 +222,8 @@ npm test
 Backend (`backend/.env`): `APP_ENV`, `DATABASE_URL`, `CORS_ORIGINS`, `MAX_UPLOAD_MB`,
 `SUPABASE_JWT_SECRET` / `SUPABASE_JWKS_URL` / `SUPABASE_URL`, `AUTH_DEV_LOGIN_ENABLED`, `AUTH_DEV_JWT_SECRET`,
 `GCP_PROJECT_ID`, `GCS_BUCKET`, `LOCAL_STORAGE_DIR`, `DOCUMENT_AI_LOCATION`, `DOCUMENT_AI_PROCESSOR_ID`,
-`GEMINI_API_KEY`, `GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`, `RATE_LIMIT_PER_MINUTE`.
+`GEMINI_API_KEY`, `GEMINI_ANALYSIS_MODEL`, `GEMINI_CHAT_MODEL`, `RATE_LIMIT_PER_MINUTE`,
+`FRONTEND_DIST_DIR`.
 
 Frontend (`frontend/.env`): `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_AUTH_DEV_LOGIN`.
 
@@ -261,9 +262,12 @@ _Last updated: after live GCP verification (2026-09-25)._
 - **Document AI — live-verified**: `employment_agreement.pdf` processed by the `us` Document OCR processor, returning `parser=document_ai`, 4 pages with bounding boxes.
 - **Gemini document classification — live-verified**: the uploaded agreement was classified `EMPLOYMENT` / "Employment Agreement" through the real structured-output path.
 
+- **Cloud Run (single URL) — live-verified**: `https://lexlens-263641821288.us-central1.run.app` serves the Vite SPA and FastAPI together. `/api/health` returns `{"status":"ok"}`; landing and `/signin` render. CPU-always-allocated so upload background processing can finish.
+
 ### In progress
 
 - Live Gemini **analysis** operations (NOTICE_EXIT, QA, etc.). Blocked by model availability, not configuration — see Known issues.
+- Supabase Auth redirect URLs must include the Cloud Run origin before Google/magic-link sign-in works in production.
 
 ### Pending
 
@@ -272,7 +276,7 @@ _Last updated: after live GCP verification (2026-09-25)._
 
 ### Known issues / limitations
 
-- **Gemini 3.x Flash capacity is uneven.** Measured 2026-09-25: `gemini-3.7-flash` often returns `503`, `gemini-3.6-flash` and `gemini-3.5-flash` are the configured fallbacks. A request tries the primary, then those two, and only then returns the “taking longer than expected” error.
+- **Gemini 3.x Flash capacity is uneven.** The demo chain uses `gemini-3-flash` then `gemini-3.1-pro` so rate-limited 3.5/3.6/3.7/3.8 Flash ids are not tried first. A `429` skips that model for 60 seconds; a repeated `503` skips it for 20 seconds.
 - Retrying `429` on the same model is deliberately not done: it means that model’s quota is already exhausted. The request moves to the next fallback instead. Only `503` is retried on the current model.
 - Analysis, QA, lawyer prep and comparison call Gemini. Without `GEMINI_API_KEY` the UI shows a friendly “not configured” error. Tests inject a fake model.
 - GCS and Document AI require Application Default Credentials (`gcloud auth application-default login`). If `GCS_BUCKET` is set without ADC, application startup fails rather than falling back to local storage.
@@ -296,3 +300,4 @@ _Last updated: after live GCP verification (2026-09-25)._
 4. **Local parser/storage fallbacks** — the same normalized document structure is produced with or without GCP, so the pipeline, tests and demo work offline while Document AI/GCS are used when configured.
 5. **Model IDs are configuration** — analysis and conversational models are separate settings, with `GEMINI_FALLBACK_MODELS` tried in order when the primary is unavailable.
 6. **Operation registry as single source of truth** — labels, descriptions per document type, retrieval keywords, topics and result schema selection live in one backend module, mirrored minimally in the frontend for labels/icons.
+7. **Single Cloud Run URL** — one container serves the Vite build and FastAPI (`FRONTEND_DIST_DIR`). Same-origin `/api` avoids CORS in production. Cloud Run must use CPU-always-allocated so upload `BackgroundTasks` can finish Document AI after the HTTP response. Demo persistence is SQLite on `/tmp` plus GCS for files.

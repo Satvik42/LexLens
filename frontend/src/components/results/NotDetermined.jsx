@@ -31,7 +31,7 @@ export default function NotDetermined({
       </section>
 
       {professionalQuestions.length ? (
-        <section>
+        <section className="pro-callout">
           <h3 className="section-title">You may want to ask a legal professional</h3>
           <ul className="pro-questions">
             {professionalQuestions.map((question) => (

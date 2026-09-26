@@ -13,6 +13,7 @@ from app.api.deps import build_services
 from app.config import get_settings
 from app.db.database import init_db
 from app.logging_config import configure_logging
+from app.spa import mount_frontend
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,8 @@ def create_app() -> FastAPI:
     @app.get("/api/health", tags=["health"])
     def health() -> dict:
         return {"status": "ok"}
+
+    mount_frontend(app, settings.frontend_dist_dir)
 
     return app
 

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertCard, Icon } from '../components/ui';
+import { AlertCard, Button, Icon } from '../components/ui';
 import DocumentGate from '../components/document/DocumentGate';
 import AnalyzingState from '../components/results/AnalyzingState';
 import LawyerQuestions from '../components/lawyer/LawyerQuestions';
@@ -15,19 +15,28 @@ export default function LawyerPrep() {
   const [status, setStatus] = useState(cached ? 'ready' : 'loading');
   const [error, setError] = useState(null);
 
+  const load = useCallback(
+    (force = false) => {
+      setStatus('loading');
+      setError(null);
+      getLawyerQuestions(documentId, { force })
+        .then((result) => {
+          setLawyerQuestions(documentId, result);
+          setQuestions(result.questions);
+          setStatus('ready');
+        })
+        .catch((err) => {
+          setError(err.message);
+          setStatus('error');
+        });
+    },
+    [documentId, setLawyerQuestions],
+  );
+
   useEffect(() => {
     if (cached) return;
-    getLawyerQuestions(documentId)
-      .then((result) => {
-        setLawyerQuestions(documentId, result);
-        setQuestions(result.questions);
-        setStatus('ready');
-      })
-      .catch((err) => {
-        setError(err.message);
-        setStatus('error');
-      });
-  }, [cached, documentId, setLawyerQuestions]);
+    load(false);
+  }, [cached, load]);
 
   return (
     <DocumentGate documentId={documentId}>
@@ -44,7 +53,14 @@ export default function LawyerPrep() {
             </p>
           </header>
           {status === 'loading' ? <AnalyzingState title="Preparing questions from your document" /> : null}
-          {status === 'error' ? <AlertCard tone="danger">{error}</AlertCard> : null}
+          {status === 'error' ? (
+            <AlertCard tone="danger">
+              <p>{error}</p>
+              <Button variant="secondary" onClick={() => load(true)} style={{ marginTop: 12 }}>
+                Try again
+              </Button>
+            </AlertCard>
+          ) : null}
           {status === 'ready' ? (
             <LawyerQuestions documentId={document.id} questions={questions} onQuestionsChange={setQuestions} />
           ) : null}

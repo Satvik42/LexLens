@@ -939,6 +939,13 @@
   align-items: flex-start;
 }
 
+.pro-callout {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+}
+
 .pro-questions {
   margin: 12px 0 0 20px;
   color: var(--text-secondary);
@@ -953,15 +960,82 @@
   margin-bottom: 20px;
 }
 
+.ask-turn {
+  display: grid;
+  gap: 12px;
+}
+
+.ask-turn__user {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .ask-user {
   display: inline-flex;
-  margin-left: auto;
   background: var(--primary-soft);
   color: var(--primary-dark);
   padding: 10px 14px;
   border-radius: 14px 14px 4px 14px;
   font-weight: 500;
-  max-width: 80%;
+  max-width: min(80%, 460px);
+}
+
+.ask-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+.ask-status__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ask-status__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.ask-status__step.is-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.ask-status__step.is-done {
+  color: var(--success);
+}
+
+.ask-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.ask-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ask-dot 1s infinite ease-in-out;
+}
+
+.ask-dots span:nth-child(2) { animation-delay: 0.15s; }
+.ask-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes ask-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
 }
 
 .ask-box,
@@ -1028,6 +1102,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ask-dots span {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
   .reveal-item,
   .reveal.is-visible .reveal-item,
   .hero-float,

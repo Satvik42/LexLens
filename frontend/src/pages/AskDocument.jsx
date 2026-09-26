@@ -19,9 +19,15 @@ export default function AskDocument() {
   const [conversationId, setConversationId] = useState(cached?.id ?? null);
   const [messages, setMessages] = useState(cached?.messages ?? []);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(null);
   const [error, setError] = useState(null);
+  const threadEnd = useRef(null);
 
   const asked = useRef(new Set());
+
+  useEffect(() => {
+    threadEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [messages, pending]);
 
   useEffect(() => {
     if (preset) setQuestion(preset);
@@ -39,8 +45,18 @@ export default function AskDocument() {
     setBusy(true);
     setError(null);
     setQuestion('');
+    setPending({ question: value, phase: 'looking' });
+    const started = Date.now();
+    const lookingTimer = window.setTimeout(() => {
+      setPending((current) => (current ? { ...current, phase: 'thinking' } : current));
+    }, 1100);
     try {
       const answer = await askQuestion(documentId, value, conversationId);
+      const remaining = 1900 - (Date.now() - started);
+      if (remaining > 0) {
+        setPending({ question: value, phase: 'thinking' });
+        await new Promise((resolve) => window.setTimeout(resolve, remaining));
+      }
       const next = { id: answer.conversation_id, messages: [...messages, { question: value, answer }] };
       setConversationId(answer.conversation_id);
       setMessages(next.messages);
@@ -49,6 +65,8 @@ export default function AskDocument() {
       setError(err.message);
       setQuestion(value);
     } finally {
+      window.clearTimeout(lookingTimer);
+      setPending(null);
       setBusy(false);
     }
   }
@@ -70,12 +88,9 @@ export default function AskDocument() {
             {messages.map((item) => (
               <QaTurn key={item.answer.id} documentId={document.id} item={item} />
             ))}
-            {busy ? (
-              <div className="card card--padded" role="status">
-                <span className="spinner" aria-hidden="true" /> Looking in the document…
-              </div>
-            ) : null}
+            {pending ? <PendingTurn question={pending.question} phase={pending.phase} /> : null}
             {error ? <AlertCard tone="danger">{error}</AlertCard> : null}
+            <div ref={threadEnd} />
           </div>
 
           <form
@@ -104,12 +119,40 @@ export default function AskDocument() {
   );
 }
 
+function PendingTurn({ question, phase }) {
+  const thinking = phase === 'thinking';
+  return (
+    <section className="ask-turn" aria-live="polite">
+      <div className="ask-turn__user">
+        <p className="ask-user">{question}</p>
+      </div>
+      <div className="ask-status" role="status">
+        <span className="ask-status__avatar" aria-hidden="true">
+          <Icon name={thinking ? 'sparkle' : 'search'} size={18} />
+        </span>
+        <div>
+          <p className={`ask-status__step ${thinking ? 'is-done' : 'is-current'}`}>
+            {thinking ? <Icon name="check" size={14} /> : <span className="ask-dots" aria-hidden="true"><span /><span /><span /></span>}
+            Looking into the document
+          </p>
+          <p className={`ask-status__step ${thinking ? 'is-current' : ''}`}>
+            {thinking ? <span className="ask-dots" aria-hidden="true"><span /><span /><span /></span> : null}
+            Thinking
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function QaTurn({ documentId, item }) {
   const { question, answer } = item;
   const missing = answer.status === 'NOT_FOUND';
   return (
     <section className="ask-turn">
-      <p className="ask-user">{question}</p>
+      <div className="ask-turn__user">
+        <p className="ask-user">{question}</p>
+      </div>
       <div className="card card--padded">
         {missing ? (
           <NotDetermined

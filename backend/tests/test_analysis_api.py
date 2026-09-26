@@ -130,6 +130,24 @@ def test_lawyer_questions_are_grounded(client, alice, ready_document):
     assert len(questions[0]["evidence"]) == 2 and all(e["verified"] for e in questions[0]["evidence"])
 
 
+def test_lawyer_questions_are_built_from_the_document_when_gemini_is_down(client, alice, ready_document):
+    from app.api.deps import ServiceContainer
+    from app.services.gemini_service import ModelUnavailableError, StructuredModel
+
+    class Down(StructuredModel):
+        def generate(self, prompt, schema, *, conversational=False):
+            raise ModelUnavailableError("capacity", code=503)
+
+    services = client.app.state.services
+    client.app.state.services = ServiceContainer(storage=services.storage, processing=services.processing, model=Down())
+    response = client.post(f"/api/documents/{ready_document['id']}/lawyer-questions", headers=alice, json={"force": True})
+    assert response.status_code == 200, response.text
+    questions = response.json()["questions"]
+    assert len(questions) >= 3
+    assert any("notice" in item["text"].lower() for item in questions)
+    assert any(item["evidence"] and all(quote["verified"] for quote in item["evidence"]) for item in questions)
+
+
 def test_comparison_between_two_owned_documents(client, alice, bob, demo_pdf, demo_txt, ready_document):
     second = upload(client, alice, demo_txt, filename="revised.txt", mime="text/plain").json()
     response = client.post("/api/comparisons", headers=alice, json={"original_document_id": ready_document["id"], "updated_document_id": second["id"]})
