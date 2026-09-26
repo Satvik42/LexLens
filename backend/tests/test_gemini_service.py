@@ -144,3 +144,105 @@ def test_fallback_chain_skips_a_duplicate_of_the_primary(monkeypatch):
 def test_service_requires_api_key():
     with pytest.raises(ModelUnavailableError):
         GeminiService(Settings(gemini_api_key=None))
+
+
+_OK = '{"document_type": "RENTAL", "title": "Lease"}'
+
+
+def test_rate_limit_is_remembered_for_the_next_request(monkeypatch):
+    now = {"t": 1_000.0}
+    monkeypatch.setattr(gemini_service.time, "monotonic", lambda: now["t"])
+    service, fake = _service(
+        monkeypatch,
+        [_TransientError(429), _OK, _OK],
+        gemini_analysis_model="gemini-3.7-flash",
+        gemini_fallback_models="gemini-3.8-flash",
+    )
+    service.generate("classify", DocumentTypeOutput)
+    service.generate("classify", DocumentTypeOutput)
+    assert [request[0] for request in fake.requests] == [
+        "gemini-3.7-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+    ]
+
+
+def test_cooled_model_is_eligible_again_after_sixty_seconds(monkeypatch):
+    now = {"t": 1_000.0}
+    monkeypatch.setattr(gemini_service.time, "monotonic", lambda: now["t"])
+    service, fake = _service(
+        monkeypatch,
+        [_TransientError(429), _OK, _OK],
+        gemini_analysis_model="gemini-3.7-flash",
+        gemini_fallback_models="gemini-3.8-flash",
+    )
+    service.generate("classify", DocumentTypeOutput)
+    now["t"] = 1_060.0
+    service.generate("classify", DocumentTypeOutput)
+    assert fake.requests[-1][0] == "gemini-3.7-flash"
+
+
+def test_repeated_503_cools_the_model_for_twenty_seconds(monkeypatch):
+    now = {"t": 500.0}
+    monkeypatch.setattr(gemini_service.time, "monotonic", lambda: now["t"])
+    service, fake = _service(
+        monkeypatch,
+        [_TransientError(503), _TransientError(503), _OK, _OK],
+        gemini_analysis_model="gemini-3.7-flash",
+        gemini_fallback_models="gemini-3-flash",
+    )
+    service.generate("classify", DocumentTypeOutput)
+    service.generate("classify", DocumentTypeOutput)
+    assert [request[0] for request in fake.requests] == [
+        "gemini-3.7-flash",
+        "gemini-3.7-flash",
+        "gemini-3-flash",
+        "gemini-3-flash",
+    ]
+
+
+def test_schema_failure_does_not_cool_the_model(monkeypatch):
+    now = {"t": 10.0}
+    monkeypatch.setattr(gemini_service.time, "monotonic", lambda: now["t"])
+    service, fake = _service(
+        monkeypatch,
+        ["not json", _OK],
+        gemini_analysis_model="gemini-3.7-flash",
+        gemini_fallback_models="gemini-3-flash",
+    )
+    service.generate("classify", DocumentTypeOutput)
+    assert [request[0] for request in fake.requests] == ["gemini-3.7-flash", "gemini-3.7-flash"]
+
+
+def test_other_errors_do_not_cool_the_model(monkeypatch):
+    now = {"t": 10.0}
+    monkeypatch.setattr(gemini_service.time, "monotonic", lambda: now["t"])
+    service, fake = _service(
+        monkeypatch,
+        [RuntimeError("not found"), _OK, _OK],
+        gemini_analysis_model="gemini-3-flash",
+        gemini_fallback_models="gemini-3.1-pro",
+    )
+    service.generate("classify", DocumentTypeOutput)
+    service.generate("classify", DocumentTypeOutput)
+    assert [request[0] for request in fake.requests] == [
+        "gemini-3-flash",
+        "gemini-3.1-pro",
+        "gemini-3-flash",
+    ]
+
+
+def test_when_all_models_are_cooling_the_soonest_is_tried_once(monkeypatch):
+    now = {"t": 0.0}
+    monkeypatch.setattr(gemini_service.time, "monotonic", lambda: now["t"])
+    service, fake = _service(
+        monkeypatch,
+        [_TransientError(429), _TransientError(429), _TransientError(429)],
+        gemini_analysis_model="gemini-3.7-flash",
+        gemini_fallback_models="gemini-3.8-flash",
+    )
+    service._cooldown.mark("gemini-3.7-flash", 50)
+    service._cooldown.mark("gemini-3.8-flash", 10)
+    with pytest.raises(ModelUnavailableError):
+        service.generate("classify", DocumentTypeOutput)
+    assert [request[0] for request in fake.requests] == ["gemini-3.8-flash"]

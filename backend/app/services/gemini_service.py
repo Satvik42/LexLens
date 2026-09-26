@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
 from app.prompts.system import BASE_SYSTEM_INSTRUCTION
+from app.services.model_cooldown import ModelCooldown
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ TRANSIENT_ATTEMPTS = 5
 _CHAIN_TRANSIENT_ATTEMPTS = 2
 _TRANSIENT_CODES = frozenset({503})
 _BACKOFF_SECONDS = 2.0
+RATE_LIMIT_COOLDOWN_SECONDS = 60.0
+OUTAGE_COOLDOWN_SECONDS = 20.0
 
 
 class ModelOutputError(Exception):
@@ -35,6 +38,10 @@ class ModelOutputError(Exception):
 
 class ModelUnavailableError(Exception):
     """Gemini is not configured or the request failed."""
+
+    def __init__(self, message: str, *, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class StructuredModel(ABC):
@@ -54,6 +61,7 @@ class GeminiService(StructuredModel):
         self._analysis_model = settings.gemini_analysis_model
         self._chat_model = settings.gemini_chat_model
         self._fallback_models = settings.gemini_fallback_model_list()
+        self._cooldown = ModelCooldown(time.monotonic)
 
     def generate(self, prompt: str, schema: type[TModel], *, conversational: bool = False) -> TModel:
         from google.genai import types
@@ -65,14 +73,23 @@ class GeminiService(StructuredModel):
             temperature=_TEMPERATURE,
         )
         chain = self._model_chain(conversational)
-        attempts = _CHAIN_TRANSIENT_ATTEMPTS if len(chain) > 1 else TRANSIENT_ATTEMPTS
+        ready = [model for model in chain if self._cooldown.allow(model)]
+        rescue = not ready
+        candidates = ready or [self._cooldown.soonest(chain)]
+        attempts = 1 if rescue else (_CHAIN_TRANSIENT_ATTEMPTS if len(chain) > 1 else TRANSIENT_ATTEMPTS)
         last_unavailable: ModelUnavailableError | None = None
-        for model in chain:
+        for model in candidates:
             try:
                 return self._generate_validated(model, prompt, schema, config, attempts)
             except ModelUnavailableError as exc:
                 last_unavailable = exc
+                if exc.code == 429:
+                    self._cooldown.mark(model, RATE_LIMIT_COOLDOWN_SECONDS)
+                elif exc.code == 503:
+                    self._cooldown.mark(model, OUTAGE_COOLDOWN_SECONDS)
                 logger.warning("Gemini model unavailable (%s); trying the next model", model)
+                if rescue:
+                    break
         raise last_unavailable or ModelUnavailableError("The analysis service is temporarily unavailable")
 
     def _model_chain(self, conversational: bool) -> list[str]:
@@ -105,6 +122,9 @@ class GeminiService(StructuredModel):
                 retryable = getattr(exc, "code", None) in _TRANSIENT_CODES and attempt < attempts
                 if not retryable:
                     logger.warning("Gemini request failed (%s): %s", model, exc.__class__.__name__)
-                    raise ModelUnavailableError("The analysis service is temporarily unavailable") from exc
+                    raise ModelUnavailableError(
+                        "The analysis service is temporarily unavailable",
+                        code=getattr(exc, "code", None),
+                    ) from exc
                 logger.info("Gemini busy (%s), retrying %s/%s", model, attempt, attempts)
                 time.sleep(_BACKOFF_SECONDS * attempt)
